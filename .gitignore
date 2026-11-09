@@ -1,0 +1,36 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Java / Maven
+target/
+*.class
+*.jar
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+coverage/
+test-results/
+playwright-report/
+
+# Local data
+postgres-data/
+*.log

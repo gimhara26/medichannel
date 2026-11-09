@@ -1,0 +1,1 @@
+Add fictional demo records for every role and appointment status. Never use real NICs, phone numbers or medical information. Keep demo passwords out of production and document local-only credentials separately.
