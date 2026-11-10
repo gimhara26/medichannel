@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-The MediChannel system uses PostgreSQL as its relational database management system. The database stores and manages information required for hospital channelling, patient registration, doctor management, appointment booking, consultations, notifications and feedback.
+The MediChannel system uses PostgreSQL as its relational database management system. The database stores and manages information required for hospital channelling, patient registration, doctor management, appointment booking, payments, consultations, notifications and feedback.
 
 The database was designed with referential integrity, data consistency, security and maintainability in mind.
 
@@ -19,7 +19,7 @@ The database was designed with referential integrity, data consistency, security
 
 ## 3. Database Tables
 
-The database contains 13 tables.
+The database contains **14 relational tables**.
 
 | No. | Table | Purpose |
 |---|---|---|
@@ -30,12 +30,13 @@ The database contains 13 tables.
 | 5 | rooms | Stores consultation room information |
 | 6 | sessions | Stores doctor channelling sessions |
 | 7 | appointments | Stores patient appointment bookings |
-| 8 | consultations | Stores consultation records |
-| 9 | chat_messages | Stores consultation chat messages |
-| 10 | notifications | Stores user notifications |
-| 11 | feedback | Stores patient feedback |
-| 12 | notices | Stores hospital notices |
-| 13 | audit_logs | Stores system audit activities |
+| 8 | payments | Stores appointment payment information |
+| 9 | consultations | Stores consultation records |
+| 10 | chat_messages | Stores consultation chat messages |
+| 11 | notifications | Stores user notifications |
+| 12 | feedback | Stores patient feedback |
+| 13 | notices | Stores hospital notices |
+| 14 | audit_logs | Stores system audit activities |
 
 ## 4. Entity Relationship Diagram
 
@@ -43,7 +44,7 @@ The database entity relationship diagram is available at:
 
 `database/erd/medichannel-erd.md`
 
-The ERD illustrates the relationships between users, patients, doctors, specialisations, sessions, appointments, consultations and other database entities.
+The ERD illustrates the relationships between users, patients, doctors, specialisations, sessions, appointments, payments, consultations and other database entities.
 
 ## 5. Primary Keys and Foreign Keys
 
@@ -57,9 +58,13 @@ Examples:
 - Doctors reference users and specialisations.
 - Sessions reference doctors and rooms.
 - Appointments reference patients and sessions.
+- Payments reference appointments and users who record payments.
 - Consultations reference appointments.
+- Chat messages reference consultations and users.
 - Feedback references appointments and patients.
 - Notifications reference users.
+- Notices reference their creators.
+- Audit logs reference the users who perform activities.
 
 ## 6. Database Constraints
 
@@ -81,7 +86,9 @@ Examples of validation rules:
 - Doctor consultation fees cannot be negative.
 - User roles must be CUSTOMER, DOCTOR, MANAGER or ADMIN.
 - Appointment status must be one of the supported statuses.
+- Payment status must be PENDING or PAID.
 - A patient cannot have multiple active appointments in the same session.
+- A paid payment must have a payment date and payment method.
 
 ## 7. Database Indexes
 
@@ -89,14 +96,15 @@ Indexes were created to improve query performance.
 
 Examples include:
 
-- Appointment indexes for patient and session searches.
+- Appointment indexes for patient, session and appointment status searches.
 - Doctor indexes for specialisation searches.
 - Session indexes for date and doctor searches.
+- Payment indexes for payment status, creation date and payment recorder searches.
 - Notification indexes for user notification retrieval.
 - Audit log indexes for actor and creation date searches.
 - Chat message indexes for consultation message retrieval.
 
-Unique indexes also enforce important business rules.
+Unique indexes also enforce important business rules, including preventing multiple active appointments for the same patient in the same session.
 
 ## 8. Timezone Management
 
@@ -117,15 +125,16 @@ Fictional seed data was inserted to test the database structure and relationship
 | rooms | 2 |
 | sessions | 2 |
 | appointments | 6 |
+| payments | 6 |
 | consultations | 2 |
 | chat_messages | 3 |
 | notifications | 3 |
 | feedback | 1 |
 | notices | 2 |
 | audit_logs | 3 |
-| **Total** | **38** |
+| **Total** | **44** |
 
-The seed data includes examples of all six appointment statuses:
+The database schema supports six appointment statuses:
 
 - BOOKED
 - ARRIVED
@@ -142,18 +151,20 @@ Database validation queries are maintained in:
 
 `database/tests/database-validation.sql`
 
-The following validations were performed:
+The following validations are included:
 
-- Verification of foreign-key relationships.
-- Detection of duplicate appointment numbers.
-- Detection of duplicate active appointments.
-- Validation of session room combinations.
-- Validation of appointment cancellation timestamps.
-- Validation of session time ranges.
-- Validation of consultation time ranges.
-- Validation of feedback ratings.
+- Counting records in all 14 tables.
+- Detecting duplicate appointment numbers.
+- Detecting duplicate active appointments.
+- Checking invalid session room references.
+- Checking appointment cancellation timestamps.
+- Validating session time ranges.
+- Validating consultation time ranges.
+- Validating feedback ratings.
+- Checking invalid payment records.
+- Checking invalid appointment numbers.
 
-The foreign-key validation checks returned zero invalid records. The additional validation queries also returned no invalid records.
+The expected result for the duplicate and invalid-record checks is zero rows.
 
 ## 11. Security Considerations
 
@@ -180,6 +191,8 @@ The application is responsible for:
 
 ## 13. Conclusion
 
-The MediChannel PostgreSQL database has been implemented with 13 relational tables, primary and foreign keys, validation constraints, indexes and fictional seed data.
+The MediChannel PostgreSQL database has been implemented with **14 relational tables**, primary and foreign keys, validation constraints, indexes and 44 fictional seed records.
 
-Database validation was performed to check data consistency and relationships. The database is prepared for integration with the Spring Boot backend and Next.js frontend, subject to application-level security and integration testing.
+Database validation queries have been prepared to check data consistency, appointment rules, payment information and relationships between tables.
+
+The database is prepared for integration with the Spring Boot backend and Next.js frontend, subject to application-level security and integration testing.
