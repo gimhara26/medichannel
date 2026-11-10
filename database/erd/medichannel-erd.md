@@ -3,44 +3,50 @@ erDiagram
 
     USERS {
         bigint id PK
-        text email_ciphertext
+        varchar full_name
+        text email_encrypted
         char email_lookup_hash UK
-        varchar password_hash
+        text password_hash
         varchar role
-        boolean active
+        boolean is_active
+        timestamptz created_at
+        timestamptz updated_at
     }
 
     PATIENTS {
         bigint id PK
-        bigint user_id FK
-        text full_name_ciphertext
-        text nic_ciphertext
+        bigint user_id FK, UK
+        text nic_encrypted
         char nic_lookup_hash UK
-        text phone_ciphertext
+        date date_of_birth
+        varchar gender
+        text phone_encrypted
+        text address_encrypted
+        timestamptz created_at
     }
 
     SPECIALISATIONS {
         bigint id PK
         varchar name UK
         text description
-        boolean active
+        boolean is_active
     }
 
     DOCTORS {
         bigint id PK
-        bigint user_id FK
+        bigint user_id FK, UK
         bigint specialisation_id FK
-        text full_name_ciphertext
-        varchar slmc_registration_number UK
-        numeric default_fee
-        boolean active
+        varchar qualification
+        integer experience_years
+        numeric consultation_fee
+        boolean is_active
     }
 
     ROOMS {
         bigint id PK
         varchar room_name UK
-        text location_description
-        boolean active
+        varchar location
+        boolean is_active
     }
 
     SESSIONS {
@@ -50,10 +56,10 @@ erDiagram
         date session_date
         time start_time
         time end_time
-        varchar session_type
         integer max_patients
-        numeric fee
+        numeric consultation_fee
         varchar status
+        timestamptz created_at
     }
 
     APPOINTMENTS {
@@ -61,85 +67,93 @@ erDiagram
         bigint session_id FK
         bigint patient_id FK
         integer appointment_number
-        varchar appointment_type
-        varchar booking_reference UK
-        varchar status
+        varchar appointment_status
         varchar payment_status
+        varchar payment_method
+        timestamptz booked_at
+        timestamptz arrived_at
+        timestamptz cancelled_at
+    }
+
+    PAYMENTS {
+        bigint id PK
+        bigint appointment_id FK, UK
+        numeric amount
+        varchar payment_method
+        varchar payment_status
+        timestamptz paid_at
+        bigint recorded_by FK
+        timestamptz created_at
     }
 
     CONSULTATIONS {
         bigint id PK
-        bigint appointment_id FK
-        text diagnosis_ciphertext
-        text advice_ciphertext
-        text prescription_ciphertext
+        bigint appointment_id FK, UK
+        text consultation_notes_encrypted
+        text prescription_encrypted
         timestamptz started_at
-        timestamptz ended_at
+        timestamptz completed_at
     }
 
     CHAT_MESSAGES {
         bigint id PK
         bigint consultation_id FK
         bigint sender_user_id FK
-        text message_ciphertext
-        timestamptz created_at
+        text message_encrypted
+        timestamptz sent_at
     }
 
     NOTIFICATIONS {
         bigint id PK
         bigint user_id FK
-        varchar notification_type
         varchar title
-        text body
-        timestamptz read_at
+        text message
+        boolean is_read
+        timestamptz created_at
     }
 
     FEEDBACK {
         bigint id PK
-        bigint appointment_id FK
+        bigint appointment_id FK, UK
         bigint patient_id FK
         integer rating
         text comment
-        boolean visible
+        timestamptz created_at
     }
 
     NOTICES {
         bigint id PK
         varchar title
-        text body
-        boolean published
+        text content
         bigint created_by FK
+        timestamptz published_at
+        timestamptz expires_at
+        boolean is_active
     }
 
     AUDIT_LOGS {
         bigint id PK
         bigint actor_user_id FK
         varchar action
-        varchar target_type
-        varchar target_id
-        inet ip_address
+        varchar entity_type
+        bigint entity_id
+        timestamptz created_at
     }
 
     USERS ||--o| PATIENTS : "has profile"
     USERS ||--o| DOCTORS : "has profile"
-
     SPECIALISATIONS ||--o{ DOCTORS : "categorises"
-
     DOCTORS ||--o{ SESSIONS : "conducts"
-    ROOMS o|--o{ SESSIONS : "hosts"
-
+    ROOMS ||--o{ SESSIONS : "hosts"
     SESSIONS ||--o{ APPOINTMENTS : "contains"
     PATIENTS ||--o{ APPOINTMENTS : "books"
-
+    APPOINTMENTS ||--o| PAYMENTS : "has payment"
+    USERS o|--o{ PAYMENTS : "records"
     APPOINTMENTS ||--o| CONSULTATIONS : "has"
-
     CONSULTATIONS ||--o{ CHAT_MESSAGES : "contains"
     USERS ||--o{ CHAT_MESSAGES : "sends"
-
     USERS ||--o{ NOTIFICATIONS : "receives"
-
     APPOINTMENTS ||--o| FEEDBACK : "receives"
     PATIENTS ||--o{ FEEDBACK : "submits"
-
     USERS ||--o{ NOTICES : "creates"
     USERS o|--o{ AUDIT_LOGS : "performs"

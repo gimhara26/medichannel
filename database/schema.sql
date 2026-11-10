@@ -1,165 +1,381 @@
--- MediChannel initial PostgreSQL schema.
--- All timestamps are stored as timestamptz and application business time is Asia/Colombo.
--- Sensitive values are stored as ciphertext by the application; *_lookup_hash columns
--- support equality lookup without decrypting the protected value.
+-- =========================================================
+-- MediChannel Hospital Channelling System
+-- PostgreSQL Database Schema
+-- Database: medichannel_db
+-- Total Tables: 14
+-- Timezone: Asia/Colombo
+-- =========================================================
 
+BEGIN;
+
+SET TIME ZONE 'Asia/Colombo';
+
+-- 1. USERS
 CREATE TABLE users (
-  id BIGSERIAL PRIMARY KEY,
-  email_ciphertext TEXT NOT NULL,
-  email_lookup_hash CHAR(64) NOT NULL UNIQUE,
-  password_hash VARCHAR(100) NOT NULL,
-  role VARCHAR(20) NOT NULL CHECK (role IN ('CUSTOMER','DOCTOR','MANAGER','ADMIN')),
-  active BOOLEAN NOT NULL DEFAULT TRUE,
-  failed_login_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_login_attempts >= 0),
-  locked_until TIMESTAMPTZ,
-  password_change_required BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                       id BIGSERIAL PRIMARY KEY,
+                       full_name VARCHAR(150) NOT NULL,
+                       email_encrypted TEXT NOT NULL,
+                       email_lookup_hash CHAR(64) NOT NULL UNIQUE,
+                       password_hash TEXT NOT NULL,
+                       role VARCHAR(20) NOT NULL
+                           CHECK (role IN ('ADMIN', 'MANAGER', 'DOCTOR', 'CUSTOMER')),
+                       is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 2. PATIENTS
 CREATE TABLE patients (
-  id BIGSERIAL PRIMARY KEY,
-  user_id BIGINT NOT NULL UNIQUE REFERENCES users(id),
-  full_name_ciphertext TEXT NOT NULL,
-  nic_ciphertext TEXT NOT NULL,
-  nic_lookup_hash CHAR(64) NOT NULL UNIQUE,
-  date_of_birth_ciphertext TEXT NOT NULL,
-  gender VARCHAR(30),
-  phone_ciphertext TEXT NOT NULL,
-  address_ciphertext TEXT NOT NULL
+                          id BIGSERIAL PRIMARY KEY,
+                          user_id BIGINT NOT NULL UNIQUE,
+                          nic_encrypted TEXT,
+                          nic_lookup_hash CHAR(64) UNIQUE,
+                          date_of_birth DATE,
+                          gender VARCHAR(20),
+                          phone_encrypted TEXT,
+                          address_encrypted TEXT,
+                          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                          CONSTRAINT fk_patients_user
+                              FOREIGN KEY (user_id)
+                                  REFERENCES users(id)
+                                  ON UPDATE CASCADE
+                                  ON DELETE RESTRICT
 );
 
+-- 3. SPECIALISATIONS
 CREATE TABLE specialisations (
-  id BIGSERIAL PRIMARY KEY,
-  name VARCHAR(120) NOT NULL UNIQUE,
-  description TEXT,
-  active BOOLEAN NOT NULL DEFAULT TRUE
+                                 id BIGSERIAL PRIMARY KEY,
+                                 name VARCHAR(100) NOT NULL UNIQUE,
+                                 description TEXT,
+                                 is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+-- 4. DOCTORS
 CREATE TABLE doctors (
-  id BIGSERIAL PRIMARY KEY,
-  user_id BIGINT NOT NULL UNIQUE REFERENCES users(id),
-  specialisation_id BIGINT NOT NULL REFERENCES specialisations(id),
-  full_name_ciphertext TEXT NOT NULL,
-  slmc_registration_number VARCHAR(50) NOT NULL UNIQUE,
-  qualifications TEXT NOT NULL,
-  bio TEXT,
-  default_fee NUMERIC(12,2) NOT NULL CHECK (default_fee >= 0),
-  active BOOLEAN NOT NULL DEFAULT TRUE
+                         id BIGSERIAL PRIMARY KEY,
+                         user_id BIGINT NOT NULL UNIQUE,
+                         specialisation_id BIGINT NOT NULL,
+                         qualification VARCHAR(200),
+                         experience_years INTEGER
+                             CHECK (experience_years >= 0),
+                         consultation_fee NUMERIC(12,2) NOT NULL
+                             CHECK (consultation_fee >= 0),
+                         is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+                         CONSTRAINT fk_doctors_user
+                             FOREIGN KEY (user_id)
+                                 REFERENCES users(id)
+                                 ON UPDATE CASCADE
+                                 ON DELETE RESTRICT,
+
+                         CONSTRAINT fk_doctors_specialisation
+                             FOREIGN KEY (specialisation_id)
+                                 REFERENCES specialisations(id)
+                                 ON UPDATE CASCADE
+                                 ON DELETE RESTRICT
 );
 
+CREATE INDEX idx_doctors_specialisation
+    ON doctors(specialisation_id);
+
+-- 5. ROOMS
 CREATE TABLE rooms (
-  id BIGSERIAL PRIMARY KEY,
-  room_name VARCHAR(80) NOT NULL UNIQUE,
-  location_description TEXT,
-  active BOOLEAN NOT NULL DEFAULT TRUE
+                       id BIGSERIAL PRIMARY KEY,
+                       room_name VARCHAR(100) NOT NULL UNIQUE,
+                       location VARCHAR(150),
+                       is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+-- 6. SESSIONS
 CREATE TABLE sessions (
-  id BIGSERIAL PRIMARY KEY,
-  doctor_id BIGINT NOT NULL REFERENCES doctors(id),
-  room_id BIGINT REFERENCES rooms(id),
-  session_date DATE NOT NULL,
-  start_time TIME NOT NULL,
-  end_time TIME NOT NULL,
-  session_type VARCHAR(20) NOT NULL CHECK (session_type IN ('PHYSICAL','ONLINE')),
-  max_patients INTEGER NOT NULL CHECK (max_patients BETWEEN 1 AND 60),
-  minutes_per_patient INTEGER NOT NULL CHECK (minutes_per_patient BETWEEN 5 AND 30),
-  fee NUMERIC(12,2) NOT NULL CHECK (fee >= 0),
-  delay_minutes INTEGER NOT NULL DEFAULT 0 CHECK (delay_minutes >= 0),
-  status VARCHAR(20) NOT NULL CHECK (status IN ('SCHEDULED','OPEN','IN_PROGRESS','COMPLETED','CANCELLED')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CHECK (end_time > start_time),
-  CHECK ((session_type = 'PHYSICAL' AND room_id IS NOT NULL) OR (session_type = 'ONLINE' AND room_id IS NULL))
+                          id BIGSERIAL PRIMARY KEY,
+                          doctor_id BIGINT NOT NULL,
+                          room_id BIGINT NOT NULL,
+                          session_date DATE NOT NULL,
+                          start_time TIME NOT NULL,
+                          end_time TIME NOT NULL,
+                          max_patients INTEGER NOT NULL
+                              CHECK (max_patients > 0),
+                          consultation_fee NUMERIC(12,2) NOT NULL
+                              CHECK (consultation_fee >= 0),
+                          status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED'
+                              CHECK (status IN ('SCHEDULED', 'CANCELLED', 'COMPLETED')),
+                          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                          CONSTRAINT fk_sessions_doctor
+                              FOREIGN KEY (doctor_id)
+                                  REFERENCES doctors(id)
+                                  ON UPDATE CASCADE
+                                  ON DELETE RESTRICT,
+
+                          CONSTRAINT fk_sessions_room
+                              FOREIGN KEY (room_id)
+                                  REFERENCES rooms(id)
+                                  ON UPDATE CASCADE
+                                  ON DELETE RESTRICT,
+
+                          CONSTRAINT chk_session_time
+                              CHECK (end_time > start_time),
+
+                          CONSTRAINT uq_session_room_date_time
+                              UNIQUE (room_id, session_date, start_time)
 );
 
+CREATE INDEX idx_sessions_doctor
+    ON sessions(doctor_id);
+
+CREATE INDEX idx_sessions_date
+    ON sessions(session_date);
+
+-- 7. APPOINTMENTS
 CREATE TABLE appointments (
-  id BIGSERIAL PRIMARY KEY,
-  session_id BIGINT NOT NULL REFERENCES sessions(id),
-  patient_id BIGINT NOT NULL REFERENCES patients(id),
-  appointment_number INTEGER NOT NULL CHECK (appointment_number >= 1),
-  appointment_type VARCHAR(20) NOT NULL CHECK (appointment_type IN ('PHYSICAL','ONLINE')),
-  reason_ciphertext TEXT NOT NULL,
-  booking_reference VARCHAR(40) NOT NULL UNIQUE,
-  status VARCHAR(30) NOT NULL CHECK (status IN ('BOOKED','ARRIVED','IN_CONSULTATION','COMPLETED','NO_SHOW','CANCELLED')),
-  payment_status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (payment_status IN ('PENDING','PAID')),
-  payment_method VARCHAR(20) CHECK (payment_method IN ('CASH','CARD')),
-  checked_in_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  cancelled_at TIMESTAMPTZ,
-  UNIQUE (session_id, appointment_number)
-);
-CREATE UNIQUE INDEX uq_patient_active_session
-  ON appointments(session_id, patient_id)
-  WHERE status IN ('BOOKED','ARRIVED','IN_CONSULTATION');
+                              id BIGSERIAL PRIMARY KEY,
+                              session_id BIGINT NOT NULL,
+                              patient_id BIGINT NOT NULL,
+                              appointment_number INTEGER NOT NULL
+                                  CHECK (appointment_number >= 1),
 
+                              appointment_status VARCHAR(20) NOT NULL DEFAULT 'BOOKED'
+                                  CHECK (
+                                      appointment_status IN (
+                                                             'BOOKED',
+                                                             'ARRIVED',
+                                                             'IN_CONSULTATION',
+                                                             'COMPLETED',
+                                                             'CANCELLED',
+                                                             'NO_SHOW'
+                                          )
+                                      ),
+
+                              payment_status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+                                  CHECK (payment_status IN ('PENDING', 'PAID')),
+
+                              payment_method VARCHAR(20)
+                                  CHECK (payment_method IN ('CASH', 'CARD')),
+
+                              booked_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                              arrived_at TIMESTAMPTZ,
+                              cancelled_at TIMESTAMPTZ,
+
+                              CONSTRAINT fk_appointments_session
+                                  FOREIGN KEY (session_id)
+                                      REFERENCES sessions(id)
+                                      ON UPDATE CASCADE
+                                      ON DELETE RESTRICT,
+
+                              CONSTRAINT fk_appointments_patient
+                                  FOREIGN KEY (patient_id)
+                                      REFERENCES patients(id)
+                                      ON UPDATE CASCADE
+                                      ON DELETE RESTRICT,
+
+                              CONSTRAINT uq_appointment_session_number
+                                  UNIQUE (session_id, appointment_number),
+
+                              CONSTRAINT uq_appointment_id_patient
+                                  UNIQUE (id, patient_id)
+);
+
+CREATE INDEX idx_appointments_session
+    ON appointments(session_id);
+
+CREATE INDEX idx_appointments_patient
+    ON appointments(patient_id);
+
+CREATE INDEX idx_appointments_status
+    ON appointments(appointment_status);
+
+CREATE UNIQUE INDEX uq_active_patient_session
+    ON appointments(session_id, patient_id)
+    WHERE appointment_status IN (
+        'BOOKED',
+        'ARRIVED',
+        'IN_CONSULTATION'
+    );
+
+-- 8. PAYMENTS
+CREATE TABLE payments (
+                          id BIGSERIAL PRIMARY KEY,
+                          appointment_id BIGINT NOT NULL UNIQUE,
+                          amount NUMERIC(12,2) NOT NULL
+                              CHECK (amount >= 0),
+
+                          payment_method VARCHAR(20)
+                              CHECK (payment_method IN ('CASH', 'CARD')),
+
+                          payment_status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+                              CHECK (payment_status IN ('PENDING', 'PAID')),
+
+                          paid_at TIMESTAMPTZ,
+                          recorded_by BIGINT,
+                          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                          CONSTRAINT fk_payments_appointment
+                              FOREIGN KEY (appointment_id)
+                                  REFERENCES appointments(id)
+                                  ON UPDATE CASCADE
+                                  ON DELETE RESTRICT,
+
+                          CONSTRAINT fk_payments_recorder
+                              FOREIGN KEY (recorded_by)
+                                  REFERENCES users(id)
+                                  ON UPDATE CASCADE
+                                  ON DELETE RESTRICT,
+
+                          CONSTRAINT chk_payment_details CHECK (
+                              (
+                                  payment_status = 'PENDING'
+                                      AND paid_at IS NULL
+                                  )
+                                  OR
+                              (
+                                  payment_status = 'PAID'
+                                      AND paid_at IS NOT NULL
+                                      AND payment_method IS NOT NULL
+                                  )
+                              )
+);
+
+CREATE INDEX idx_payments_status
+    ON payments(payment_status);
+
+CREATE INDEX idx_payments_created
+    ON payments(created_at DESC);
+
+CREATE INDEX idx_payments_recorder
+    ON payments(recorded_by);
+
+-- 9. CONSULTATIONS
 CREATE TABLE consultations (
-  id BIGSERIAL PRIMARY KEY,
-  appointment_id BIGINT NOT NULL UNIQUE REFERENCES appointments(id),
-  diagnosis_ciphertext TEXT,
-  advice_ciphertext TEXT,
-  prescription_ciphertext TEXT,
-  started_at TIMESTAMPTZ,
-  ended_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                               id BIGSERIAL PRIMARY KEY,
+                               appointment_id BIGINT NOT NULL UNIQUE,
+                               consultation_notes_encrypted TEXT,
+                               prescription_encrypted TEXT,
+                               started_at TIMESTAMPTZ,
+                               completed_at TIMESTAMPTZ,
+
+                               CONSTRAINT fk_consultations_appointment
+                                   FOREIGN KEY (appointment_id)
+                                       REFERENCES appointments(id)
+                                       ON UPDATE CASCADE
+                                       ON DELETE RESTRICT,
+
+                               CONSTRAINT chk_consultation_time
+                                   CHECK (
+                                       completed_at IS NULL
+                                           OR started_at IS NULL
+                                           OR completed_at >= started_at
+                                       )
 );
 
+-- 10. CHAT MESSAGES
 CREATE TABLE chat_messages (
-  id BIGSERIAL PRIMARY KEY,
-  consultation_id BIGINT NOT NULL REFERENCES consultations(id),
-  sender_user_id BIGINT NOT NULL REFERENCES users(id),
-  message_ciphertext TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                               id BIGSERIAL PRIMARY KEY,
+                               consultation_id BIGINT NOT NULL,
+                               sender_user_id BIGINT NOT NULL,
+                               message_encrypted TEXT NOT NULL,
+                               sent_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                               CONSTRAINT fk_chat_consultation
+                                   FOREIGN KEY (consultation_id)
+                                       REFERENCES consultations(id)
+                                       ON UPDATE CASCADE
+                                       ON DELETE RESTRICT,
+
+                               CONSTRAINT fk_chat_sender
+                                   FOREIGN KEY (sender_user_id)
+                                       REFERENCES users(id)
+                                       ON UPDATE CASCADE
+                                       ON DELETE RESTRICT
 );
 
+CREATE INDEX idx_chat_consultation
+    ON chat_messages(consultation_id, sent_at);
+
+-- 11. NOTIFICATIONS
 CREATE TABLE notifications (
-  id BIGSERIAL PRIMARY KEY,
-  user_id BIGINT NOT NULL REFERENCES users(id),
-  notification_type VARCHAR(40) NOT NULL,
-  title VARCHAR(160) NOT NULL,
-  body TEXT NOT NULL,
-  read_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                               id BIGSERIAL PRIMARY KEY,
+                               user_id BIGINT NOT NULL,
+                               title VARCHAR(200) NOT NULL,
+                               message TEXT NOT NULL,
+                               is_read BOOLEAN NOT NULL DEFAULT FALSE,
+                               created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                               CONSTRAINT fk_notifications_user
+                                   FOREIGN KEY (user_id)
+                                       REFERENCES users(id)
+                                       ON UPDATE CASCADE
+                                       ON DELETE RESTRICT
 );
 
+CREATE INDEX idx_notifications_user
+    ON notifications(user_id, created_at DESC);
+
+-- 12. FEEDBACK
 CREATE TABLE feedback (
-  id BIGSERIAL PRIMARY KEY,
-  appointment_id BIGINT NOT NULL UNIQUE REFERENCES appointments(id),
-  patient_id BIGINT NOT NULL REFERENCES patients(id),
-  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
-  comment TEXT,
-  visible BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                          id BIGSERIAL PRIMARY KEY,
+                          appointment_id BIGINT NOT NULL,
+                          patient_id BIGINT NOT NULL,
+                          rating INTEGER NOT NULL
+                              CHECK (rating BETWEEN 1 AND 5),
+                          comment TEXT,
+                          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                          CONSTRAINT fk_feedback_appointment_patient
+                              FOREIGN KEY (appointment_id, patient_id)
+                                  REFERENCES appointments(id, patient_id)
+                                  ON UPDATE CASCADE
+                                  ON DELETE RESTRICT,
+
+                          CONSTRAINT uq_feedback_appointment
+                              UNIQUE (appointment_id)
 );
 
+-- 13. NOTICES
 CREATE TABLE notices (
-  id BIGSERIAL PRIMARY KEY,
-  title VARCHAR(180) NOT NULL,
-  body TEXT NOT NULL,
-  published BOOLEAN NOT NULL DEFAULT FALSE,
-  published_at TIMESTAMPTZ,
-  created_by BIGINT NOT NULL REFERENCES users(id),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                         id BIGSERIAL PRIMARY KEY,
+                         title VARCHAR(200) NOT NULL,
+                         content TEXT NOT NULL,
+                         created_by BIGINT NOT NULL,
+                         published_at TIMESTAMPTZ,
+                         expires_at TIMESTAMPTZ,
+                         is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+                         CONSTRAINT fk_notices_creator
+                             FOREIGN KEY (created_by)
+                                 REFERENCES users(id)
+                                 ON UPDATE CASCADE
+                                 ON DELETE RESTRICT,
+
+                         CONSTRAINT chk_notice_expiry
+                             CHECK (
+                                 expires_at IS NULL
+                                     OR published_at IS NULL
+                                     OR expires_at > published_at
+                                 )
 );
 
+-- 14. AUDIT LOGS
 CREATE TABLE audit_logs (
-  id BIGSERIAL PRIMARY KEY,
-  actor_user_id BIGINT REFERENCES users(id),
-  action VARCHAR(100) NOT NULL,
-  target_type VARCHAR(80),
-  target_id VARCHAR(80),
-  ip_address INET,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                            id BIGSERIAL PRIMARY KEY,
+                            actor_user_id BIGINT,
+                            action VARCHAR(100) NOT NULL,
+                            entity_type VARCHAR(100),
+                            entity_id BIGINT,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                            CONSTRAINT fk_audit_actor
+                                FOREIGN KEY (actor_user_id)
+                                    REFERENCES users(id)
+                                    ON UPDATE CASCADE
+                                    ON DELETE RESTRICT
 );
 
-CREATE INDEX idx_sessions_date_status ON sessions(session_date, status);
-CREATE INDEX idx_appointments_session_status ON appointments(session_id, status);
-CREATE INDEX idx_appointments_patient_created ON appointments(patient_id, created_at DESC);
-CREATE INDEX idx_notifications_user_created ON notifications(user_id, created_at DESC);
-CREATE INDEX idx_chat_consultation_created ON chat_messages(consultation_id, created_at);
+CREATE INDEX idx_audit_actor
+    ON audit_logs(actor_user_id);
 
--- IMPORTANT: BR-03 appointment allocation must be implemented transactionally in the
--- Spring service (lock the session row / use an atomic allocator). The UNIQUE constraint
--- is a final safety net, not a complete concurrency strategy.
--- IMPORTANT: enforce doctor and room time-overlap rules in the service and, where possible,
--- PostgreSQL exclusion constraints using a suitable migration strategy.
+CREATE INDEX idx_audit_created
+    ON audit_logs(created_at DESC);
+
+COMMIT;
